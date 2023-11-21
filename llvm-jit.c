@@ -68,6 +68,34 @@ static void JITShutdown(LLVMOrcLLJITRef J, int *ExitCode) {
   }
 }
 
+static void materializationUnitFn() {}
+
+// Stub definition generator, where all Names are materialized from the
+// materializationUnitFn() test function and defined into the JIT Dylib
+static LLVMErrorRef
+JITDefinitionGeneratorFn(LLVMOrcDefinitionGeneratorRef G, void *Ctx,
+                         LLVMOrcLookupStateRef *LS, LLVMOrcLookupKind K,
+                         LLVMOrcJITDylibRef JD, LLVMOrcJITDylibLookupFlags F,
+                         LLVMOrcCLookupSet Names, size_t NamesCount) {
+  for (size_t I = 0; I < NamesCount; I++) {
+    LLVMOrcCLookupSetElement Element = Names[I];
+    fprintf(stderr, "Generating dummy for undefined function: %s\n",
+            LLVMOrcSymbolStringPoolEntryStr(Element.Name));
+    LLVMOrcJITTargetAddress Addr =
+        (LLVMOrcJITTargetAddress)(&materializationUnitFn);
+    LLVMJITSymbolFlags Flags = {LLVMJITSymbolGenericFlagsWeak, 0};
+    LLVMJITEvaluatedSymbol Sym = {Addr, Flags};
+    LLVMOrcRetainSymbolStringPoolEntry(Element.Name);
+    LLVMOrcCSymbolMapPair Pair = {Element.Name, Sym};
+    LLVMOrcCSymbolMapPair Pairs[] = {Pair};
+    LLVMOrcMaterializationUnitRef MU = LLVMOrcAbsoluteSymbols(Pairs, 1);
+    LLVMErrorRef Err = LLVMOrcJITDylibDefine(JD, MU);
+    if (Err)
+      return Err;
+  }
+  return LLVMErrorSuccess;
+}
+
 static int RunDemo(LLVMOrcLLJITRef J, const char *FileName) {
   LLVMOrcThreadSafeModuleRef TSM = CreateDemoModule(FileName);
   if (TSM == NULL)
@@ -81,6 +109,11 @@ static int RunDemo(LLVMOrcLLJITRef J, const char *FileName) {
     LLVMOrcDisposeThreadSafeModule(TSM);
     return HandleError(Err);
   }
+
+  LLVMOrcDefinitionGeneratorRef Gen =
+      LLVMOrcCreateCustomCAPIDefinitionGenerator(&JITDefinitionGeneratorFn,
+                                                 NULL, NULL);
+  LLVMOrcJITDylibAddGenerator(MainJD, Gen);
 
   LLVMOrcJITTargetAddress SumAddr;
   Err = LLVMOrcLLJITLookup(J, &SumAddr, "sum");
