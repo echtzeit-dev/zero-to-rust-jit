@@ -1,3 +1,4 @@
+#include "llvm-c/BitReader.h"
 #include "llvm-c/Core.h"
 #include "llvm-c/Error.h"
 #include "llvm-c/LLJIT.h"
@@ -6,59 +7,51 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-int HandleError(LLVMErrorRef Err) {
+static int HandleError(LLVMErrorRef Err) {
   char *ErrMsg = LLVMGetErrorMessage(Err);
   fprintf(stderr, "Error: %s\n", ErrMsg);
   LLVMDisposeErrorMessage(ErrMsg);
   return 1;
 }
 
-LLVMOrcThreadSafeModuleRef createDemoModule(void) {
-  // Create a new ThreadSafeContext and underlying LLVMContext.
+static void DiagnosticHandler(LLVMDiagnosticInfoRef DI, void *C) {
+  char *CErr = LLVMGetDiagInfoDescription(DI);
+  fprintf(stderr, "Error with new bitcode parser: %s\n", CErr);
+  LLVMDisposeMessage(CErr);
+  exit(EXIT_FAILURE);
+}
+
+LLVMOrcThreadSafeModuleRef CreateDemoModule(const char *FileName) {
+  LLVMBool EC;
+
+  char *Err;
+  LLVMMemoryBufferRef MemBuf;
+  EC = LLVMCreateMemoryBufferWithContentsOfFile(FileName, &MemBuf, &Err);
+  if (EC != 0) {
+    fprintf(stderr, "Error reading file %s: %s\n", FileName, Err);
+    return NULL;
+  }
+
+  // Orc supports multi-threaded compilation and execution, so it needs a
+  // thread-safe context.
   LLVMOrcThreadSafeContextRef TSCtx = LLVMOrcCreateNewThreadSafeContext();
-
-  // Get a reference to the underlying LLVMContext.
   LLVMContextRef Ctx = LLVMOrcThreadSafeContextGetContext(TSCtx);
+  LLVMContextSetDiagnosticHandler(Ctx, DiagnosticHandler, NULL);
 
-  // Create a new LLVM module.
-  LLVMModuleRef M = LLVMModuleCreateWithNameInContext("demo", Ctx);
+  LLVMModuleRef M;
+  EC = LLVMParseBitcode2(MemBuf, &M);
+  if (EC != 0) {
+    fprintf(stderr, "Parsing bitcode from file %s failed with error code: %d\n",
+            "demo_sum.ll", EC);
+    LLVMDisposeMemoryBuffer(MemBuf);
+    return NULL;
+  }
 
-  // Add a "sum" function":
-  //  - Create the function type and function instance.
-  LLVMTypeRef ParamTypes[] = {LLVMInt32Type(), LLVMInt32Type()};
-  LLVMTypeRef SumFunctionType =
-      LLVMFunctionType(LLVMInt32Type(), ParamTypes, 2, 0);
-  LLVMValueRef SumFunction = LLVMAddFunction(M, "sum", SumFunctionType);
-
-  //  - Add a basic block to the function.
-  LLVMBasicBlockRef EntryBB = LLVMAppendBasicBlock(SumFunction, "entry");
-
-  //  - Add an IR builder and point it at the end of the basic block.
-  LLVMBuilderRef Builder = LLVMCreateBuilder();
-  LLVMPositionBuilderAtEnd(Builder, EntryBB);
-
-  //  - Get the two function arguments and use them co construct an "add"
-  //    instruction.
-  LLVMValueRef SumArg0 = LLVMGetParam(SumFunction, 0);
-  LLVMValueRef SumArg1 = LLVMGetParam(SumFunction, 1);
-  LLVMValueRef Result = LLVMBuildAdd(Builder, SumArg0, SumArg1, "result");
-
-  //  - Build the return instruction.
-  LLVMBuildRet(Builder, Result);
-
-  //  - Free the builder.
-  LLVMDisposeBuilder(Builder);
-
-  // Our demo module is now complete. Wrap it and our ThreadSafeContext in a
-  // ThreadSafeModule.
+  // Return single entity that bundles ownership of module and context.
   LLVMOrcThreadSafeModuleRef TSM = LLVMOrcCreateNewThreadSafeModule(M, TSCtx);
-
-  // Dispose of our local ThreadSafeContext value. The underlying LLVMContext
-  // will be kept alive by our ThreadSafeModule, TSM.
   LLVMOrcDisposeThreadSafeContext(TSCtx);
-
-  // Return the result.
   return TSM;
 }
 
@@ -75,8 +68,10 @@ static void JITShutdown(LLVMOrcLLJITRef J, int *ExitCode) {
   }
 }
 
-static int RunDemo(LLVMOrcLLJITRef J) {
-  LLVMOrcThreadSafeModuleRef TSM = createDemoModule();
+static int RunDemo(LLVMOrcLLJITRef J, const char *FileName) {
+  LLVMOrcThreadSafeModuleRef TSM = CreateDemoModule(FileName);
+  if (TSM == NULL)
+    return EXIT_FAILURE;
 
   LLVMOrcJITDylibRef MainJD = LLVMOrcLLJITGetMainJITDylib(J);
   LLVMErrorRef Err = LLVMOrcLLJITAddLLVMIRModule(J, MainJD, TSM);
@@ -101,6 +96,13 @@ static int RunDemo(LLVMOrcLLJITRef J) {
 }
 
 int main(int argc, const char *argv[]) {
+  if (argc < 2) {
+    const char *BaseName = strrchr(argv[0], '/');
+    const char *ExecName = BaseName ? BaseName + 1 : "llvm-jit-c";
+    fprintf(stderr, "Usage: %s bitcode\n", ExecName);
+    return EXIT_FAILURE;
+  }
+
   int ExitCode = 0;
   LLVMParseCommandLineOptions(argc, argv, "");
   LLVMInitializeNativeTarget();
@@ -111,7 +113,7 @@ int main(int argc, const char *argv[]) {
   if (Err) {
     ExitCode = HandleError(Err);
   } else {
-    ExitCode = RunDemo(J);
+    ExitCode = RunDemo(J, argv[1]);
     JITShutdown(J, &ExitCode);
   }
 
