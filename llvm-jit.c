@@ -5,9 +5,13 @@
 #include "llvm-c/Support.h"
 #include "llvm-c/Target.h"
 
+#include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdnoreturn.h>
 
 static int HandleError(LLVMErrorRef Err) {
   char *ErrMsg = LLVMGetErrorMessage(Err);
@@ -16,7 +20,7 @@ static int HandleError(LLVMErrorRef Err) {
   return 1;
 }
 
-static void DiagnosticHandler(LLVMDiagnosticInfoRef DI, void *C) {
+static noreturn void DiagnosticHandler(LLVMDiagnosticInfoRef DI, void *C) {
   char *CErr = LLVMGetDiagInfoDescription(DI);
   fprintf(stderr, "Error with new bitcode parser: %s\n", CErr);
   LLVMDisposeMessage(CErr);
@@ -68,7 +72,52 @@ static void JITShutdown(LLVMOrcLLJITRef J, int *ExitCode) {
   }
 }
 
-static void materializationUnitFn() {}
+LLVMOrcLLJITRef J;
+
+static noreturn void Halt() {
+  fprintf(stderr, "Encountered undefined function. Halting.\n");
+  while (true)
+    ;
+}
+
+static noreturn void RustPanicHandler(const char *str) {
+  fprintf(stderr, "Panic due to overflow: %s\n", str);
+  int ExitCode = 0;
+  JITShutdown(J, &ExitCode);
+  // Indicate default failure if JIT shutdown didn't fail
+  if (ExitCode == 0)
+    ExitCode = EXIT_FAILURE;
+  LLVMShutdown();
+  exit(ExitCode);
+}
+
+static const char *DropLeadingUnderscores(const char *Name) {
+  while (Name[0] == '_') {
+    assert(Name[0] != '\0' && "No pure-underscore function names please");
+    Name += 1;
+  }
+  return Name;
+}
+
+static bool IsRustPanicHandler(const char *MangledName) {
+  const char *CmpName = DropLeadingUnderscores(MangledName);
+  const char *PanicHandlerSig = "ZN4core9panicking";
+  return strncmp(CmpName, PanicHandlerSig, strlen(PanicHandlerSig)) == 0;
+}
+
+static LLVMOrcMaterializationUnitRef
+HostFunctionRedirect(LLVMOrcSymbolStringPoolEntryRef Name,
+                     LLVMOrcJITTargetAddress Addr) {
+  LLVMJITSymbolFlags Flags = {LLVMJITSymbolGenericFlagsWeak, 0};
+  LLVMJITEvaluatedSymbol Sym = {Addr, Flags};
+  LLVMOrcRetainSymbolStringPoolEntry(Name);
+  LLVMOrcCSymbolMapPair Pair = {Name, Sym};
+  LLVMOrcCSymbolMapPair Pairs[] = {Pair};
+  return LLVMOrcAbsoluteSymbols(Pairs, 1);
+}
+
+#define STRINGIFY(a) STRINGIFY_DETAIL(a)
+#define STRINGIFY_DETAIL(a) #a
 
 // Stub definition generator, where all Names are materialized from the
 // materializationUnitFn() test function and defined into the JIT Dylib
@@ -77,21 +126,23 @@ JITDefinitionGeneratorFn(LLVMOrcDefinitionGeneratorRef G, void *Ctx,
                          LLVMOrcLookupStateRef *LS, LLVMOrcLookupKind K,
                          LLVMOrcJITDylibRef JD, LLVMOrcJITDylibLookupFlags F,
                          LLVMOrcCLookupSet Names, size_t NamesCount) {
-  for (size_t I = 0; I < NamesCount; I++) {
+  for (size_t I = 0; I < NamesCount; I += 1) {
     LLVMOrcCLookupSetElement Element = Names[I];
-    fprintf(stderr, "Generating dummy for undefined function: %s\n",
-            LLVMOrcSymbolStringPoolEntryStr(Element.Name));
-    LLVMOrcJITTargetAddress Addr =
-        (LLVMOrcJITTargetAddress)(&materializationUnitFn);
-    LLVMJITSymbolFlags Flags = {LLVMJITSymbolGenericFlagsWeak, 0};
-    LLVMJITEvaluatedSymbol Sym = {Addr, Flags};
-    LLVMOrcRetainSymbolStringPoolEntry(Element.Name);
-    LLVMOrcCSymbolMapPair Pair = {Element.Name, Sym};
-    LLVMOrcCSymbolMapPair Pairs[] = {Pair};
-    LLVMOrcMaterializationUnitRef MU = LLVMOrcAbsoluteSymbols(Pairs, 1);
-    LLVMErrorRef Err = LLVMOrcJITDylibDefine(JD, MU);
-    if (Err)
-      return Err;
+    LLVMOrcJITTargetAddress Handler;
+
+    const char *MangledName = LLVMOrcSymbolStringPoolEntryStr(Element.Name);
+    if (IsRustPanicHandler(MangledName)) {
+      Handler = (LLVMOrcJITTargetAddress)&RustPanicHandler;
+      fprintf(stderr, "Redirecting to host function %s @ 0x%016llx: %s\n",
+              STRINGIFY(RustPanicHandler), Handler, MangledName);
+      LLVMOrcMaterializationUnitRef MU =
+          HostFunctionRedirect(Element.Name, Handler);
+      LLVMErrorRef Err = LLVMOrcJITDylibDefine(JD, MU);
+      if (Err)
+        return Err;
+    }
+
+    // Other underfined functions will be reported as regular lookup errors
   }
   return LLVMErrorSuccess;
 }
@@ -122,7 +173,7 @@ static int RunDemo(LLVMOrcLLJITRef J, const char *FileName) {
 
   // If we made it here then everything succeeded. Execute our JIT'd code.
   int32_t (*Sum)(int32_t, int32_t) = (int32_t(*)(int32_t, int32_t))SumAddr;
-  int32_t Result = Sum(1, 2);
+  int32_t Result = Sum(0x80000000, 0x80000000);
 
   printf("1 + 2 = %i\n", Result);
   return EXIT_SUCCESS;
@@ -141,7 +192,6 @@ int main(int argc, const char *argv[]) {
   LLVMInitializeNativeTarget();
   LLVMInitializeNativeAsmPrinter();
 
-  LLVMOrcLLJITRef J;
   LLVMErrorRef Err = LLVMOrcCreateLLJIT(&J, 0);
   if (Err) {
     ExitCode = HandleError(Err);
