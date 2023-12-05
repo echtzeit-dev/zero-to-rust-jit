@@ -1,6 +1,6 @@
-extern void hello(void);
+#include <stdio.h>
 
 int sum(int a, int b) {
-  hello();
+  printf("Oh hello, that's JITed code!\n");
   return a + b;
 }

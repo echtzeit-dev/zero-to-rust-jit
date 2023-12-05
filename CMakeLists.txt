@@ -29,11 +29,26 @@ add_executable(zero-to-rust-jit
 )
 
 target_link_libraries(zero-to-rust-jit PRIVATE LLVM)
+set_target_properties(zero-to-rust-jit PROPERTIES ENABLE_EXPORTS On)
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  execute_process(COMMAND xcrun --show-sdk-path
+    RESULT_VARIABLE exit_code
+    OUTPUT_VARIABLE sdk_path
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(exit_code EQUAL "0")
+    message(STATUS "Platform SDK: ${sdk_path}")
+  else()
+    message(FATAL_ERROR "Command failed: xcrun --show-sdk-path")
+  endif()
+else()
+  set(sdk_path "/")
+endif()
 
 set(source_sum_c ${CMAKE_CURRENT_SOURCE_DIR}/sum.c)
 set(bitcode_sum_c ${CMAKE_CURRENT_BINARY_DIR}/sum_c.bc)
 add_custom_command(OUTPUT ${bitcode_sum_c}
-  COMMAND ${LLVM_TOOLS_BINARY_DIR}/clang -c -emit-llvm -o ${bitcode_sum_c} ${source_sum_c}
+  COMMAND ${LLVM_TOOLS_BINARY_DIR}/clang -c -emit-llvm -isysroot ${sdk_path} -o ${bitcode_sum_c} ${source_sum_c}
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   DEPENDS ${source_sum_c}
   COMMENT "Precompiling ${source_sum_c}"
