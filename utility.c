@@ -10,8 +10,15 @@ int handleError(LLVMErrorRef Err) {
   return 1;
 }
 
-void init(int argc, const char *argv[], LLVMOrcLLJITRef *Jit,
-          LLVMOrcThreadSafeContextRef *Ctx) {
+const char *init(int argc, const char *argv[], LLVMOrcLLJITRef *Jit,
+                 LLVMOrcThreadSafeContextRef *Ctx) {
+  if (argc < 2) {
+    const char *BaseName = strrchr(argv[0], '/');
+    const char *ExecName = BaseName ? BaseName + 1 : "zero-to-rust-jit";
+    fprintf(stderr, "Usage: %s sum.bc [ llvm-flags ]\n", ExecName);
+    shutdown(EXIT_FAILURE); // noreturn
+  }
+
   LLVMParseCommandLineOptions(argc, argv, "");
   LLVMInitializeNativeTarget();
   LLVMInitializeNativeAsmPrinter();
@@ -24,6 +31,7 @@ void init(int argc, const char *argv[], LLVMOrcLLJITRef *Jit,
 
   *Jit = JitInst;
   *Ctx = CtxInst;
+  return argv[1];
 }
 
 void addModule(LLVMOrcLLJITRef Jit, LLVMModuleRef Mod) {
