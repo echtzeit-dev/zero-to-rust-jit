@@ -15,13 +15,14 @@ message("LLVM STATUS:
   Targets     ${LLVM_TARGETS_TO_BUILD}"
 )
 
-include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
+include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
 add_executable(zero-to-rust-jit
   zero-to-rust-jit.c
+  module-build.c
+  utility.c
 )
 
-llvm_map_components_to_libnames(llvm_libs OrcJIT native)
-target_link_libraries(zero-to-rust-jit PRIVATE ${llvm_libs})
+target_link_libraries(zero-to-rust-jit PRIVATE LLVM)
