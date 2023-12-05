@@ -34,7 +34,7 @@ const char *init(int argc, const char *argv[], LLVMOrcLLJITRef *Jit,
   return argv[1];
 }
 
-void addModule(LLVMOrcLLJITRef Jit, LLVMModuleRef Mod) {
+LLVMOrcJITDylibRef addModule(LLVMOrcLLJITRef Jit, LLVMModuleRef Mod) {
   LLVMOrcThreadSafeModuleRef TSM =
       LLVMOrcCreateNewThreadSafeModule(Mod, CtxInst);
   LLVMOrcJITDylibRef MainJD = LLVMOrcLLJITGetMainJITDylib(Jit);
@@ -46,6 +46,8 @@ void addModule(LLVMOrcLLJITRef Jit, LLVMModuleRef Mod) {
     LLVMOrcDisposeThreadSafeModule(TSM);
     shutdown(handleError(Err)); // noreturn
   }
+
+  return MainJD;
 }
 
 void loop(int (*Sum)(int, int)) {

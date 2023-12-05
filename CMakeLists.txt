@@ -21,6 +21,7 @@ add_definitions(${LLVM_DEFINITIONS})
 
 add_executable(zero-to-rust-jit
   zero-to-rust-jit.c
+  generator.c
   module-build.c
   module-parse.c
   module-load.c
