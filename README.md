@@ -76,3 +76,21 @@ LLVM version: 17.0.4
     -DLLVM_DIR=$LLVM_MAINLINE/lib/cmake/llvm
 ➜ ninja -Cbuild-mainline
 ```
+
+## Transpile the C code to Rust
+```
+cmake .. -D LLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm -DCMAKE_EXPORT_COMPILE_COMMANDS=1
+c2rust transpile compile_commands.json
+```
+
+## Build and run the Rust version
+
+### Linux
+```
+➜ cargo run build/sum_c.bc
+```
+
+### macOS
+```
+➜ LLVM_SYS_170_PREFIX=/usr/local/opt/llvm@17 cargo run build/sum_c.bc
+```
