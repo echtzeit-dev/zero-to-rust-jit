@@ -9,6 +9,7 @@ use libc::{c_char, c_int};
 use llvm_sys::bit_reader::LLVMParseBitcode2;
 use llvm_sys::core::{LLVMContextSetDiagnosticHandler, LLVMCreateMemoryBufferWithContentsOfFile, LLVMDisposeMessage, LLVMGetDiagInfoDescription};
 use llvm_sys::error::LLVMErrorRef;
+use llvm_sys::error::LLVMGetErrorMessage;
 use llvm_sys::orc2::lljit::{LLVMOrcCreateLLJIT, LLVMOrcLLJITAddLLVMIRModule, LLVMOrcLLJITGetMainJITDylib, LLVMOrcLLJITLookup, LLVMOrcLLJITRef};
 use llvm_sys::orc2::{LLVMJITEvaluatedSymbol, LLVMJITSymbolFlags, LLVMOrcAbsoluteSymbols, LLVMOrcCLookupSet, LLVMOrcCreateCustomCAPIDefinitionGenerator, LLVMOrcCreateNewThreadSafeContext, LLVMOrcCreateNewThreadSafeModule, LLVMOrcCSymbolMapPair, LLVMOrcDefinitionGeneratorRef, LLVMOrcJITDylibAddGenerator, LLVMOrcJITDylibDefine, LLVMOrcJITDylibLookupFlags, LLVMOrcJITDylibRef, LLVMOrcJITTargetAddress, LLVMOrcLookupKind, LLVMOrcLookupStateRef, LLVMOrcMaterializationUnitRef, LLVMOrcRetainSymbolStringPoolEntry, LLVMOrcSymbolStringPoolEntryRef, LLVMOrcThreadSafeContextGetContext, LLVMOrcThreadSafeContextRef};
 use llvm_sys::orc2::LLVMJITSymbolGenericFlags::LLVMJITSymbolGenericFlagsWeak;
@@ -28,12 +29,24 @@ fn handle_undefined_symbol(mangled_name: &[u8]) -> LLVMOrcJITTargetAddress {
     }
 }
 
+fn check_error(err: LLVMErrorRef) -> bool {
+    if err != ptr::null_mut() {
+        unsafe {
+            let msg = LLVMGetErrorMessage(err);
+            eprintln!("Error: {}", CStr::from_ptr(msg).to_str().unwrap());
+        }
+        true
+    } else {
+        false
+    }
+}
+
 unsafe fn add_module(jit: LLVMOrcLLJITRef, ctx: LLVMOrcThreadSafeContextRef, module: LLVMModuleRef) -> LLVMOrcJITDylibRef {
     let tsm = LLVMOrcCreateNewThreadSafeModule(module, ctx);
     let main_jd = LLVMOrcLLJITGetMainJITDylib(jit);
 
     let err = LLVMOrcLLJITAddLLVMIRModule(jit, main_jd, tsm);
-    if err != ptr::null_mut() {
+    if check_error(err) {
         panic!();
     }
 
@@ -54,7 +67,9 @@ unsafe fn load_module(file_name: &str, ctx: LLVMOrcThreadSafeContextRef) -> LLVM
     let mut mem_buf = ptr::null_mut();
     let mut err = ptr::null_mut();
     LLVMCreateMemoryBufferWithContentsOfFile(file_name.as_ptr(), &mut mem_buf as *mut _, &mut err as *mut _);
-    assert_eq!(err, ptr::null_mut());
+    if check_error(err as *mut _) {
+        panic!();
+    }
 
     let bare_ctx = LLVMOrcThreadSafeContextGetContext(ctx);
     LLVMContextSetDiagnosticHandler(bare_ctx, Some(diagnostic_handler), ptr::null_mut() as *mut _);
@@ -69,7 +84,7 @@ unsafe fn load_module(file_name: &str, ctx: LLVMOrcThreadSafeContextRef) -> LLVM
 unsafe fn init() -> (String, LLVMOrcLLJITRef, LLVMOrcThreadSafeContextRef) {
     let mut args = env::args().collect::<Vec<_>>();
     if args.len() < 2 {
-        panic!("Usage: %s sum.bc [ llvm-flags ]\n")
+        panic!("Usage: %s prime_factors.bc [ llvm-flags ]\n")
     }
 
     LLVMParseCommandLineOptions(
@@ -82,7 +97,9 @@ unsafe fn init() -> (String, LLVMOrcLLJITRef, LLVMOrcThreadSafeContextRef) {
 
     let mut jit = ptr::null_mut();
     let err = LLVMOrcCreateLLJIT(&mut jit as *mut _, ptr::null_mut());
-    assert_eq!(err, ptr::null_mut());
+    if check_error(err) {
+        panic!();
+    }
 
     let ctx = LLVMOrcCreateNewThreadSafeContext();
     assert_ne!(ctx, ptr::null_mut());
@@ -99,29 +116,26 @@ fn main() {
 
         add_generator(unit, handle_undefined_symbol);
 
-        let mut sum_fn_addr: LLVMOrcJITTargetAddress = 0;
-        let name = CString::new("sum").unwrap();
-        let err = LLVMOrcLLJITLookup(jit, &mut sum_fn_addr as *mut _, name.as_ptr() as *const c_char);
-        assert_eq!(err, ptr::null_mut());
+        let mut prime_factors_fn_addr: LLVMOrcJITTargetAddress = 0;
+        let name = CString::new("prime_factors").unwrap();
+        let err = LLVMOrcLLJITLookup(jit, &mut prime_factors_fn_addr as *mut _, name.as_ptr() as *const c_char);
+        if check_error(err) {
+            panic!();
+        }
 
-        let sum: extern "C" fn(i32, i32) -> i32 = transmute(sum_fn_addr);
-        do_loop(sum);
+        let prime_factors: fn(u64) -> Vec<u64> = transmute(prime_factors_fn_addr);
+        do_loop(prime_factors);
     }
 }
 
-fn do_loop(sum: extern "C" fn(i32, i32) -> i32) {
+fn do_loop(prime_factors: fn(u64) -> Vec<u64>) {
     let mut term = Term::stdout();
 
     loop {
-        write!(term, "a = ").unwrap();
-        let a = term.read_line().unwrap().parse().unwrap();
-
-        write!(term, "b = ").unwrap();
-        let b = term.read_line().unwrap().parse().unwrap();
-
-        write!(term, "\n").unwrap();
-
-        write!(term, "\nsum({}, {}) = {}\n\n", a, b, sum(a, b)).unwrap();
+        write!(term, "n = ").unwrap();
+        let n = term.read_line().unwrap().parse().unwrap();
+        let res = prime_factors(n);
+        write!(term, "prime_factors({}) = {res:?}\n", n).unwrap();
 
         write!(term, "Again? (Y/n) ").unwrap();
 

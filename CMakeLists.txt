@@ -57,3 +57,33 @@ add_custom_command(OUTPUT ${bitcode_sum_c}
 
 add_custom_target(precompile_sum_c DEPENDS ${bitcode_sum_c})
 add_dependencies(zero-to-rust-jit precompile_sum_c)
+
+execute_process(COMMAND rustc --version -v
+  ERROR_VARIABLE RUSTC_ERROR_OUTPUT
+  OUTPUT_VARIABLE RUSTC_VERSION_VERBOSE
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+string(REGEX MATCH "LLVM version: [0-9\\.]+" RUSTC_LLVM_VERSION_LINE "${RUSTC_VERSION_VERBOSE}")
+if("${RUSTC_LLVM_VERSION_LINE}" STREQUAL "")
+  message(FATAL_ERROR "Failed to query rustc version. "
+                      "Please check `rustup which rustc` and `rustc --version -v` and try again.")
+endif()
+
+string(REPLACE " " ";" RUSTC_LLVM_VERSION_SPLIT ${RUSTC_LLVM_VERSION_LINE})
+list(GET RUSTC_LLVM_VERSION_SPLIT -1 RUSTC_LLVM_VERSION)
+message(STATUS "Rust LLVM version: ${RUSTC_LLVM_VERSION}")
+if(NOT ${RUSTC_LLVM_VERSION} MATCHES "${LLVM_VERSION_MAJOR}\\.[0-9]+\\..*")
+  message(WARNING "Provided LLVM doesn't match the version of your installed rustc!")
+endif()
+
+set(source_prime_factors_rs ${CMAKE_CURRENT_SOURCE_DIR}/prime_factors.rs)
+set(bitcode_prime_factors_rs ${CMAKE_CURRENT_BINARY_DIR}/prime_factors_rs.bc)
+add_custom_command(OUTPUT ${bitcode_prime_factors_rs}
+  COMMAND rustc --crate-type=lib -O --emit=llvm-bc -o ${bitcode_prime_factors_rs} ${source_prime_factors_rs}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  DEPENDS ${source_prime_factors_rs}
+  COMMENT "Precompiling ${source_prime_factors_rs}"
+  VERBATIM
+)
+
+add_custom_target(precompile_rs DEPENDS ${bitcode_prime_factors_rs})
+add_dependencies(zero-to-rust-jit precompile_rs)

@@ -92,5 +92,11 @@ c2rust transpile compile_commands.json
 
 ### macOS
 ```
-➜ LLVM_SYS_170_PREFIX=/usr/local/opt/llvm@17 cargo run build/sum_c.bc
+➜ LLVM_SYS_170_PREFIX=/usr/local/opt/llvm@17 cargo run build/prime_factors_rs.bc
+   Compiling zero-to-rust-jit v0.1.0
+    Finished dev [unoptimized + debuginfo] target(s) in 1.25s
+     Running `target/debug/zero-to-rust-jit build/prime_factors_rs.bc`
+n = 12
+prime_factors(12) = [2, 2, 3]
+Again? (Y/n)
 ```
