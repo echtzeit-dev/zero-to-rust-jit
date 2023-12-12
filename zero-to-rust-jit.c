@@ -2,9 +2,19 @@
 
 void helloImpl(void) { printf("Oh hello, that's called from JITed code!\n"); }
 
+noreturn void __rust_core_panicking_panic(const char *str) {
+  fprintf(stderr, "Panic due to overflow: %s\n", str);
+  abort();
+}
+
 LLVMOrcJITTargetAddress handleUndefinedSymbol(const char *MangledName) {
   if (strncmp(MangledName, "hello", 5) == 0)
     return (LLVMOrcJITTargetAddress)&helloImpl;
+
+  while (MangledName[0] == '_')
+    MangledName += 1;
+  if (strncmp(MangledName, "ZN4core9panicking5panic", 23) == 0)
+    return (LLVMOrcJITTargetAddress)&__rust_core_panicking_panic;
 
   return 0;
 }

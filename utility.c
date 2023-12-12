@@ -19,6 +19,7 @@ const char *init(int argc, const char *argv[], LLVMOrcLLJITRef *Jit,
     shutdown(EXIT_FAILURE); // noreturn
   }
 
+  LLVMEnablePrettyStackTrace();
   LLVMParseCommandLineOptions(argc, argv, "");
   LLVMInitializeNativeTarget();
   LLVMInitializeNativeAsmPrinter();

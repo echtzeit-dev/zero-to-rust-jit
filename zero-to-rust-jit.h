@@ -6,6 +6,7 @@
 #include "llvm-c/BitReader.h"
 #include "llvm-c/Core.h"
 #include "llvm-c/Error.h"
+#include "llvm-c/ErrorHandling.h"
 #include "llvm-c/IRReader.h"
 #include "llvm-c/LLJIT.h"
 #include "llvm-c/Support.h"

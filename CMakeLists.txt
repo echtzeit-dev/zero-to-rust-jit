@@ -84,7 +84,7 @@ endif()
 set(source_sum_rs ${CMAKE_CURRENT_SOURCE_DIR}/sum.rs)
 set(bitcode_sum_rs ${CMAKE_CURRENT_BINARY_DIR}/sum_rs.bc)
 add_custom_command(OUTPUT ${bitcode_sum_rs}
-  COMMAND rustc --crate-type=lib -O --emit=llvm-bc -g -o ${bitcode_sum_rs} ${source_sum_rs}
+  COMMAND rustc --crate-type=lib --emit=llvm-bc -g -o ${bitcode_sum_rs} ${source_sum_rs}
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   DEPENDS ${source_sum_rs}
   COMMENT "Precompiling ${source_sum_rs}"
