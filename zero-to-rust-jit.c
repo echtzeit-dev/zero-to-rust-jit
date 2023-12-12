@@ -22,6 +22,9 @@ int main(int argc, const char *argv[]) {
   // Install our symbol resolver
   addGenerator(Unit, &handleUndefinedSymbol);
 
+  // Install JITLink plugin for debug support
+  addDebugSupport(Jit);
+
   // Materialize our demo function
   LLVMErrorRef Err;
   LLVMOrcJITTargetAddress SumFnAddr;

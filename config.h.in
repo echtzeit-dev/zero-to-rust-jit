@@ -1,0 +1,6 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#cmakedefine01 LLVM_CAPI_HAS_DEBUG_REGISTRATION
+
+#endif

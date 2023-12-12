@@ -76,3 +76,42 @@ LLVM version: 17.0.4
     -DLLVM_DIR=$LLVM_MAINLINE/lib/cmake/llvm
 ➜ ninja -Cbuild-mainline
 ```
+
+## Debug the JITed bitcode:
+
+[Debug support just landed on mainline](https://github.com/llvm/llvm-project/pull/73257) for Linux and macOS:
+```
+➜ lldb -- build-mainline/zero-to-rust-jit
+(lldb) version
+lldb version 15.0.7
+(lldb) log enable lldb jit
+(lldb) settings show plugin.jit-loader.gdb.enable
+(lldb) b sum
+Breakpoint 1: no locations (pending).
+(lldb) run build-mainline/sum_c.bc
+Process 235912 launched (x86_64)
+ JITLoaderGDB::SetJITBreakpoint looking for JIT register hook
+ JITLoaderGDB::SetJITBreakpoint setting JIT breakpoint
+ JITLoaderGDB::JITDebugBreakpointHit hit JIT breakpoint
+ JITLoaderGDB::ReadJITDescriptorImpl registering JIT entry at 0x10011c008 (2140 bytes)
+1 location added to breakpoint 1
+a = 1
+b = 2
+Process 235912 stopped
+* thread #1, name = 'zero-to-rust-jit', stop reason = breakpoint 1.1
+    frame #0: 0x000000010011e00e JIT(0x10011c008)`sum(a=1, b=2) at sum.c:4:3
+   1    #include <stdio.h>
+   2
+   3    int sum(int a, int b) {
+-> 4      printf("Oh hello, that's JITed code!\n");
+   5      return a + b;
+   6    }
+(lldb) c
+Process 235912 resuming
+Oh hello, that's JITed code!
+1 + 2 = 3
+Again? (y/n) n
+
+Process 235912 exited with status = 0
+(lldb) q
+```

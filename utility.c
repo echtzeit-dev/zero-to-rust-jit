@@ -50,6 +50,14 @@ LLVMOrcJITDylibRef addModule(LLVMOrcLLJITRef Jit, LLVMModuleRef Mod) {
   return MainJD;
 }
 
+void addDebugSupport(LLVMOrcLLJITRef J) {
+#if LLVM_CAPI_HAS_DEBUG_REGISTRATION
+  LLVMErrorRef Err = LLVMOrcLLJITEnableDebugSupport(J);
+  if (Err)
+    handleError(Err);
+#endif
+}
+
 void loop(int (*Sum)(int, int)) {
   char answer;
   do {

@@ -15,7 +15,7 @@ message("LLVM STATUS:
   Targets     ${LLVM_TARGETS_TO_BUILD}"
 )
 
-include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
+include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 link_directories(${LLVM_LIBRARY_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
@@ -30,6 +30,15 @@ add_executable(zero-to-rust-jit
 
 target_link_libraries(zero-to-rust-jit PRIVATE LLVM)
 set_target_properties(zero-to-rust-jit PROPERTIES ENABLE_EXPORTS On)
+
+if (${LLVM_PACKAGE_VERSION} VERSION_LESS 18)
+  set(LLVM_CAPI_HAS_DEBUG_REGISTRATION False)
+else()
+  set(LLVM_CAPI_HAS_DEBUG_REGISTRATION True)
+endif()
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/config.h.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/config.h")
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   execute_process(COMMAND xcrun --show-sdk-path
@@ -48,7 +57,7 @@ endif()
 set(source_sum_c ${CMAKE_CURRENT_SOURCE_DIR}/sum.c)
 set(bitcode_sum_c ${CMAKE_CURRENT_BINARY_DIR}/sum_c.bc)
 add_custom_command(OUTPUT ${bitcode_sum_c}
-  COMMAND ${LLVM_TOOLS_BINARY_DIR}/clang -c -emit-llvm -isysroot ${sdk_path} -o ${bitcode_sum_c} ${source_sum_c}
+  COMMAND ${LLVM_TOOLS_BINARY_DIR}/clang -c -g -emit-llvm -isysroot ${sdk_path} -o ${bitcode_sum_c} ${source_sum_c}
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   DEPENDS ${source_sum_c}
   COMMENT "Precompiling ${source_sum_c}"
