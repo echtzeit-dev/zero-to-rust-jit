@@ -41,7 +41,7 @@ LLVM version: 17.0.4
 
 Pass bitcode for the `sum()` function as first command-line argument:
 ```
-➜ build/zero-to-rust-jit build/sum_c.bc
+➜ build/zero-to-rust-jit build/sum_rs.bc
 a = 1
 b = 2
 Oh hello, that's JITed code!
