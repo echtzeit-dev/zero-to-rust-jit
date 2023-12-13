@@ -3,6 +3,7 @@
 
 #include "llvm-c/Core.h"
 #include "llvm-c/Error.h"
+#include "llvm-c/IRReader.h"
 #include "llvm-c/LLJIT.h"
 #include "llvm-c/Support.h"
 #include "llvm-c/Target.h"
@@ -17,6 +18,7 @@ void init(int argc, const char *argv[], LLVMOrcLLJITRef *Jit,
 noreturn void shutdown(int ExitCode);
 
 LLVMModuleRef buildModule(LLVMOrcThreadSafeContextRef Ctx);
+LLVMModuleRef parseModule(const char *IRCode, LLVMOrcThreadSafeContextRef Ctx);
 
 void addModule(LLVMOrcLLJITRef Jit, LLVMModuleRef Mod);
 void loop(int (*Sum)(int, int));
